@@ -1,0 +1,37 @@
+import xml.etree.ElementTree as ET
+import pandas as pd
+
+# Load the XML file
+xml_file = "export.xml"
+csv_file = "output.csv"
+
+# Parse the XML file
+try:
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+except ET.ParseError as e:
+    print(f"XML Parsing Error: {e}")
+    exit()
+
+# Extract data from the XML
+records = []
+
+for record in root.findall("Record"):  # Locate all <Record> elements
+    record_data = record.attrib  # Extract attributes from <Record> as a dictionary
+    
+    # Handle nested <MetadataEntry> elements, if present
+    metadata_entries = record.findall("MetadataEntry")
+    for metadata in metadata_entries:
+        key = metadata.attrib.get("key")
+        value = metadata.attrib.get("value")
+        if key:  # Add key-value pairs from MetadataEntry
+            record_data[f"Metadata_{key}"] = value
+    
+    records.append(record_data)
+
+# Convert to DataFrame
+df = pd.DataFrame(records)
+
+# Save to CSV
+df.to_csv(csv_file, index=False)
+print(f"XML data has been successfully converted to CSV and saved as {csv_file}")
