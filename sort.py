@@ -97,11 +97,12 @@ def parse_date(date_string):
 
 def is_in_date_range(dt: datetime.datetime) -> bool:
     """
-    Return True if dt falls within one of the four target ranges:
+    Return True if dt falls within one of the five target ranges:
       1) 2024-02-12 12:00:00+01:00 → 2024-02-22 04:00:00+01:00
       2) 2025-05-21 12:00:00+02:00 → 2025-06-04 17:00:00+02:00
       3) 2025-06-04 23:00:00+02:00 → 2025-06-11 21:00:00+02:00
       4) 2025-06-11 23:00:00+02:00 → 2025-06-18 22:00:00+02:00
+      5) 2025-06-19 01:00:00+02:00 → 2025-06-25 22:00:00+02:00
     """
     # Range 1: CET is +01:00 in February
     range1_start = datetime.datetime.fromisoformat("2024-02-12T12:00:00+01:00")
@@ -115,23 +116,123 @@ def is_in_date_range(dt: datetime.datetime) -> bool:
     # Range 4: CEST is +02:00 in June
     range4_start = datetime.datetime.fromisoformat("2025-06-11T23:00:00+02:00")
     range4_end   = datetime.datetime.fromisoformat("2025-06-18T22:00:00+02:00")
+    # Range 5: CEST is +02:00 in June
+    range5_start = datetime.datetime.fromisoformat("2025-06-19T01:00:00+02:00")
+    range5_end   = datetime.datetime.fromisoformat("2025-06-25T22:00:00+02:00")
 
     return (
         (range1_start <= dt <= range1_end) or 
         (range2_start <= dt <= range2_end) or 
         (range3_start <= dt <= range3_end) or
-        (range4_start <= dt <= range4_end)
+        (range4_start <= dt <= range4_end) or
+        (range5_start <= dt <= range5_end)
     )
+
+
+def analyze_glucose_intervals(data_by_time):
+    """Analyze time intervals between blood glucose readings."""
+    # Extract timestamps that have blood glucose readings
+    glucose_timestamps = []
+    
+    # The keys in data_by_time are already formatted as 'YYYY-MM-DD HH:MM:SS±HHMM'
+    for date_str, data in data_by_time.items():
+        if data["blood_glucose"] and data["blood_glucose"].strip():
+            try:
+                # Directly convert to datetime using fromisoformat after reformatting
+                # Format is 'YYYY-MM-DD HH:MM:SS±HHMM' - need to add colon to timezone offset
+                iso_format = date_str[:22] + ':' + date_str[22:]
+                dt = datetime.datetime.fromisoformat(iso_format)
+                glucose_timestamps.append((dt, float(data["blood_glucose"])))
+            except (ValueError, TypeError) as e:
+                # Try alternative parsing method
+                try:
+                    dt = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S%z")
+                    glucose_timestamps.append((dt, float(data["blood_glucose"])))
+                except (ValueError, TypeError) as e2:
+                    print(f"Error parsing timestamp {date_str}: {e2}")
+                    continue
+    
+    print(f"\nFound {len(glucose_timestamps)} timestamps with glucose readings")
+    
+    # Sort timestamps
+    glucose_timestamps.sort(key=lambda x: x[0])
+    
+    if len(glucose_timestamps) < 2:
+        print("Not enough glucose readings to analyze intervals.")
+        return
+    
+    # Calculate time differences between consecutive readings
+    intervals = []
+    date_ranges = {
+        "range1": [],  # 2024-02-12 to 2024-02-22
+        "range2": [],  # 2025-05-21 to 2025-06-04
+        "range3": [],  # 2025-06-04 to 2025-06-11
+        "range4": [],  # 2025-06-11 to 2025-06-18
+        "range5": [],  # 2025-06-19 to 2025-06-25
+    }
+    
+    range1_start = datetime.datetime.fromisoformat("2024-02-12T00:00:00+01:00")
+    range1_end = datetime.datetime.fromisoformat("2024-02-22T23:59:59+01:00")
+    range2_start = datetime.datetime.fromisoformat("2025-05-21T00:00:00+02:00")
+    range2_end = datetime.datetime.fromisoformat("2025-06-04T23:59:59+02:00")
+    range3_start = datetime.datetime.fromisoformat("2025-06-04T00:00:00+02:00")
+    range3_end = datetime.datetime.fromisoformat("2025-06-11T23:59:59+02:00")
+    range4_start = datetime.datetime.fromisoformat("2025-06-11T00:00:00+02:00")
+    range4_end = datetime.datetime.fromisoformat("2025-06-18T23:59:59+02:00")
+    range5_start = datetime.datetime.fromisoformat("2025-06-19T00:00:00+02:00")
+    range5_end = datetime.datetime.fromisoformat("2025-06-25T23:59:59+02:00")
+    
+    for i in range(1, len(glucose_timestamps)):
+        curr_time, curr_value = glucose_timestamps[i]
+        prev_time, prev_value = glucose_timestamps[i-1]
+        
+        diff_minutes = (curr_time - prev_time).total_seconds() / 60
+        intervals.append(diff_minutes)
+        
+        # Add to specific date range
+        if range1_start <= curr_time <= range1_end:
+            date_ranges["range1"].append(diff_minutes)
+        elif range2_start <= curr_time <= range2_end:
+            date_ranges["range2"].append(diff_minutes)
+        elif range3_start <= curr_time <= range3_end:
+            date_ranges["range3"].append(diff_minutes)
+        elif range4_start <= curr_time <= range4_end:
+            date_ranges["range4"].append(diff_minutes)  
+        elif range5_start <= curr_time <= range5_end:
+            date_ranges["range5"].append(diff_minutes)
+    
+    # Print summary of intervals
+    print("\nBlood Glucose Reading Interval Analysis:")
+    print(f"- Total blood glucose readings: {len(glucose_timestamps)}")
+    
+    # Overall stats
+    if intervals:
+        print(f"- Average interval between readings: {sum(intervals)/len(intervals):.2f} minutes")
+        print(f"- Minimum interval: {min(intervals):.2f} minutes")
+        print(f"- Maximum interval: {max(intervals):.2f} minutes")
+    
+    # Count readings with ~5 minute intervals (4-6 minutes)
+    five_min_count = sum(1 for i in intervals if 4 <= i <= 6)
+    print(f"- Readings with ~5 minute intervals (4-6 min): {five_min_count} ({five_min_count/len(intervals)*100:.1f}% of intervals)")
+    
+    # Date range statistics
+    print("\nInterval statistics by date range:")
+    for range_name, range_intervals in date_ranges.items():
+        if range_intervals:
+            avg_interval = sum(range_intervals) / len(range_intervals)
+            five_min_count = sum(1 for i in range_intervals if 4 <= i <= 6)
+            percent_five_min = five_min_count/len(range_intervals)*100 if range_intervals else 0
+            print(f"- {range_name}: {len(range_intervals)+1} readings, avg interval: {avg_interval:.2f} min, ~5 min intervals: {five_min_count} ({percent_five_min:.1f}%)")
 
 
 def main():
     # Determine input file based on current date
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)))
-    if now.year == 2025 and now.month == 6 and now.day == 18:
-        input_file = "/Volumes/Lacie2/Health Data/June20/apple_health_export/20250618_output.csv"
+    if now.year == 2025 and now.month == 6 and now.day == 25:
+        input_file = "/Volumes/Lacie2/Health Data/June25/apple_health_export/output_June_25_2025.csv"
     else:
-        input_file = "20250618_output.csv"
-    output_file = "June18ReadyInsCarb.csv"
+        input_file = "output_June_25_2025.csv"
+    output_file = "June25ReadyInsCarb.csv"
 
     try:
         fin = open(input_file, newline='', encoding='utf-8')
@@ -147,6 +248,8 @@ def main():
         type_idx = header.index("type")
         value_idx = header.index("value")
         date_idx = header.index("creationDate")
+        start_date_idx = header.index("startDate")
+        source_name_idx = header.index("sourceName")
     except ValueError as e:
         print(f"Error: Expected column not found in header: {e}", file=sys.stderr)
         fin.close()
@@ -185,7 +288,7 @@ def main():
         insulin_type_idx = max(insulin_positions, key=lambda k: insulin_positions[k])
         print(f"Detected insulin-type indicator at column index {insulin_type_idx} (most frequent).")
 
-    # Prepare data container: creationDate → dict of fields
+    # Prepare data container: timestamp → dict of fields
     data_by_time = {}
 
     # Counters for summary
@@ -193,6 +296,7 @@ def main():
     parsing_errors = 0
     insulin_examined = 0
     bolus_found = 0
+    blood_glucose_count = 0
 
     # Second pass: actually extract filtered data
     fin.seek(0)
@@ -205,18 +309,25 @@ def main():
 
         data_type = row[type_idx]
 
+        # Use appropriate date field based on data type
+        date_field_idx = date_idx  # Default to creationDate
+        
+        # For blood glucose readings, we'll use startDate to get actual reading time
+        if data_type == "HKQuantityTypeIdentifierBloodGlucose":
+            date_field_idx = start_date_idx
+        
         # Parse date (with error handling)
         try:
-            dt = parse_date(row[date_idx])
+            dt = parse_date(row[date_field_idx])
         except ValueError:
             parsing_errors += 1
             continue
 
-        # Filter by our two date ranges
+        # Filter by our date ranges
         if not is_in_date_range(dt):
             continue
 
-        # Normalize timestamp to “YYYY-MM-DD HH:MM:SS±HHMM” without colon in offset
+        # Normalize timestamp to "YYYY-MM-DD HH:MM:SS±HHMM" without colon in offset
         date_str = dt.strftime("%Y-%m-%d %H:%M:%S%z")
 
         # Ensure we have an entry dict for this timestamp
@@ -226,6 +337,7 @@ def main():
                 "blood_glucose": "",
                 "insulin_dose": "",
                 "dietary_carbohydrates": "",
+                "source_device": "",
             }
 
         # Extract the correct field
@@ -234,6 +346,8 @@ def main():
 
         elif data_type == "HKQuantityTypeIdentifierBloodGlucose":
             data_by_time[date_str]["blood_glucose"] = row[value_idx]
+            data_by_time[date_str]["source_device"] = row[source_name_idx]
+            blood_glucose_count += 1
 
         elif data_type == "HKQuantityTypeIdentifierDietaryCarbohydrates":
             data_by_time[date_str]["dietary_carbohydrates"] = row[value_idx]
@@ -261,6 +375,7 @@ def main():
             "blood_glucose",
             "insulin_dose",
             "dietary_carbohydrates",
+            "source_device",
         ]
         writer = csv.DictWriter(fout, fieldnames=fieldnames)
         writer.writeheader()
@@ -277,8 +392,12 @@ def main():
     print(f"- Date parsing errors:         {parsing_errors}")
     print(f"- Insulin entries examined:    {insulin_examined}")
     print(f"- Bolus insulin entries kept:  {bolus_found}")
+    print(f"- Blood glucose values:        {blood_glucose_count}")
     print(f"- Total output timestamps:     {len(data_by_time)}")
     print(f"Output written to '{output_file}'.")
+    
+    # Analyze the time intervals between blood glucose readings
+    analyze_glucose_intervals(data_by_time)
     
 
 if __name__ == "__main__":
