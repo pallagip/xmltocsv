@@ -97,12 +97,13 @@ def parse_date(date_string):
 
 def is_in_date_range(dt: datetime.datetime) -> bool:
     """
-    Return True if dt falls within one of the five target ranges:
+    Return True if dt falls within one of the six target ranges:
       1) 2024-02-12 12:00:00+01:00 → 2024-02-22 04:00:00+01:00
       2) 2025-05-21 12:00:00+02:00 → 2025-06-04 17:00:00+02:00
       3) 2025-06-04 23:00:00+02:00 → 2025-06-11 21:00:00+02:00
       4) 2025-06-11 23:00:00+02:00 → 2025-06-18 22:00:00+02:00
       5) 2025-06-19 01:00:00+02:00 → 2025-06-25 22:00:00+02:00
+      6) 2025-06-26 01:00:00+02:00 → 2025-07-02 21:00:00+02:00
     """
     # Range 1: CET is +01:00 in February
     range1_start = datetime.datetime.fromisoformat("2024-02-12T12:00:00+01:00")
@@ -119,13 +120,17 @@ def is_in_date_range(dt: datetime.datetime) -> bool:
     # Range 5: CEST is +02:00 in June
     range5_start = datetime.datetime.fromisoformat("2025-06-19T01:00:00+02:00")
     range5_end   = datetime.datetime.fromisoformat("2025-06-25T22:00:00+02:00")
+    # Range 6: CEST is +02:00 in June/July
+    range6_start = datetime.datetime.fromisoformat("2025-06-26T01:00:00+02:00")
+    range6_end   = datetime.datetime.fromisoformat("2025-07-02T21:00:00+02:00")
 
     return (
         (range1_start <= dt <= range1_end) or 
         (range2_start <= dt <= range2_end) or 
         (range3_start <= dt <= range3_end) or
         (range4_start <= dt <= range4_end) or
-        (range5_start <= dt <= range5_end)
+        (range5_start <= dt <= range5_end) or
+        (range6_start <= dt <= range6_end)
     )
 
 
@@ -169,6 +174,7 @@ def analyze_glucose_intervals(data_by_time):
         "range3": [],  # 2025-06-04 to 2025-06-11
         "range4": [],  # 2025-06-11 to 2025-06-18
         "range5": [],  # 2025-06-19 to 2025-06-25
+        "range6": [],  # 2025-06-26 to 2025-07-02
     }
     
     range1_start = datetime.datetime.fromisoformat("2024-02-12T00:00:00+01:00")
@@ -181,6 +187,8 @@ def analyze_glucose_intervals(data_by_time):
     range4_end = datetime.datetime.fromisoformat("2025-06-18T23:59:59+02:00")
     range5_start = datetime.datetime.fromisoformat("2025-06-19T00:00:00+02:00")
     range5_end = datetime.datetime.fromisoformat("2025-06-25T23:59:59+02:00")
+    range6_start = datetime.datetime.fromisoformat("2025-06-26T00:00:00+02:00")
+    range6_end = datetime.datetime.fromisoformat("2025-07-02T23:59:59+02:00")
     
     for i in range(1, len(glucose_timestamps)):
         curr_time, curr_value = glucose_timestamps[i]
@@ -200,6 +208,8 @@ def analyze_glucose_intervals(data_by_time):
             date_ranges["range4"].append(diff_minutes)  
         elif range5_start <= curr_time <= range5_end:
             date_ranges["range5"].append(diff_minutes)
+        elif range6_start <= curr_time <= range6_end:
+            date_ranges["range6"].append(diff_minutes)
     
     # Print summary of intervals
     print("\nBlood Glucose Reading Interval Analysis:")
@@ -223,16 +233,18 @@ def analyze_glucose_intervals(data_by_time):
             five_min_count = sum(1 for i in range_intervals if 4 <= i <= 6)
             percent_five_min = five_min_count/len(range_intervals)*100 if range_intervals else 0
             print(f"- {range_name}: {len(range_intervals)+1} readings, avg interval: {avg_interval:.2f} min, ~5 min intervals: {five_min_count} ({percent_five_min:.1f}%)")
+        else:
+            print(f"- {range_name}: 0 readings, no data available")
 
 
 def main():
     # Determine input file based on current date
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=2)))
-    if now.year == 2025 and now.month == 6 and now.day == 25:
-        input_file = "/Volumes/Lacie2/Health Data/June25/apple_health_export/output_June_25_2025.csv"
+    if now.year == 2025 and now.month == 7 and now.day == 2:
+        input_file = "/Volumes/Lacie2/Health Data/July 2/apple_health_export/output_July_2_2025.csv"
     else:
-        input_file = "output_June_25_2025.csv"
-    output_file = "June25ReadyInsCarb.csv"
+        input_file = "output_July_2_2025.csv"
+    output_file = "July2ReadyInsCarb.csv"
 
     try:
         fin = open(input_file, newline='', encoding='utf-8')
